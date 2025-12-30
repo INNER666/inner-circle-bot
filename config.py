@@ -1,20 +1,16 @@
 import os
 
-# Telegram
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+def need(name: str):
+    v = os.getenv(name)
+    if not v:
+        raise RuntimeError(f"ENV {name} is missing")
+    return v
 
-# TON
-TON_API_KEY = os.getenv("TON_API_KEY")
-TON_WALLET = "UQB5B1BKxlB1ewLXCDlI67bT3kby30FSIvmHDbFz9ZmwujFT"
+BOT_TOKEN = need("BOT_TOKEN")
+CHANNEL_LINK = need("CHANNEL_LINK")
+TON_WALLET = need("TON_WALLET")
 
-# Project
-CHANNEL_LINK = "https://t.me/+mVhziBGQFTlhY2Uy"
-SUPPORT_USERNAME = "@Phoenix_00000000"
+SUBSCRIPTION_PRICE = float(need("SUBSCRIPTION_PRICE"))
+SUBSCRIPTION_DAYS = int(need("SUBSCRIPTION_DAYS"))
 
-# Subscription
-SUBSCRIPTION_PRICE = 3        # TON
-SUBSCRIPTION_DAYS = 30
-
-# Behavior
-CHECK_LIMIT_TX = 25           # how many tx to scan
-REMIND_DAYS = (7, 3, 1)       # reminders before expiry
+SUPPORT_USERNAME = need("SUPPORT_USERNAME")
