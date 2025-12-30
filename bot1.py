@@ -4,17 +4,13 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
 from config import (
-    BOT_TOKEN,
-    CHANNEL_LINK,
-    TON_WALLET,
-    SUBSCRIPTION_PRICE,
-    SUBSCRIPTION_DAYS,
+    BOT_TOKEN, CHANNEL_LINK, TON_WALLET,
+    SUBSCRIPTION_PRICE, SUBSCRIPTION_DAYS,
     SUPPORT_USERNAME
 )
+from payments import check_payment
 
-from payments import mark_paid
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN, parse_mode="Markdown")
 dp = Dispatcher(bot)
 
 USERS_FILE = "data/users.json"
@@ -39,128 +35,113 @@ def main_kb():
     kb.add(
         types.InlineKeyboardButton("🔥 Что такое INNER CIRCLE", callback_data="about"),
         types.InlineKeyboardButton("📊 Что внутри", callback_data="inside"),
-        types.InlineKeyboardButton("💰 Условия и оплата", callback_data="price"),
+        types.InlineKeyboardButton("💰 Условия и оплата", callback_data="pay"),
         types.InlineKeyboardButton("🆘 Поддержка", callback_data="support"),
     )
     return kb
 
-
 def back_kb():
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="back"))
-    return kb
-
+    return types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton("⬅️ Назад", callback_data="back")
+    )
 
 def pay_kb():
     kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("🔄 Я оплатил", callback_data="check"),
-        types.InlineKeyboardButton("⬅️ Назад", callback_data="back"),
-    )
-    return kb
-
-
-def renew_kb():
-    kb = types.InlineKeyboardMarkup()
-    kb.add(types.InlineKeyboardButton("🔁 Продлить подписку", callback_data="pay"))
+    kb.add(types.InlineKeyboardButton("🔄 Я оплатил", callback_data="check"))
+    kb.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="back"))
     return kb
 
 
 # ---------- start ----------
 @dp.message_handler(commands=["start"])
 async def start(m: types.Message):
+    users = load_users()
+    uid = str(m.from_user.id)
+
+    if uid not in users:
+        users[uid] = {"active": False, "expires": None}
+        save_users(users)
+
     text = (
         "🔥 *INNER CIRCLE*\n\n"
         "Ты зашёл не в обычный трейдинг-канал.\n\n"
-        "Это закрытое пространство для тех, кто устал от шума, хаоса и азартных решений.\n\n"
-        "Здесь — мышление, система и дисциплина."
+        "Это закрытое пространство для тех, кто устал от шума,\n"
+        "хаоса и азартных решений.\n\n"
+        "*Здесь — мышление, система и дисциплина.*"
     )
-    await m.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
+    await m.answer(text, reply_markup=main_kb())
 
 
-# ---------- sections ----------
+# ---------- callbacks ----------
 @dp.callback_query_handler(lambda c: c.data == "about")
 async def about(c: types.CallbackQuery):
-    text = (
-        "🔥 *INNER CIRCLE*\n\n"
-        "Это не сигнальный канал.\n"
-        "Это система мышления и дисциплины.\n\n"
-        "Мы не обещаем прибыль.\n"
-        "Мы учим думать и принимать решения."
+    await c.message.edit_text(
+        "INNER CIRCLE — это не сигналы.\n"
+        "Это мышление, риск-менеджмент и системный подход.\n\n"
+        "Мы не обещаем 100%.\n"
+        "Мы учим принимать *правильные решения*.",
+        reply_markup=back_kb()
     )
-    await c.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
-
 
 @dp.callback_query_handler(lambda c: c.data == "inside")
 async def inside(c: types.CallbackQuery):
-    text = (
+    await c.message.edit_text(
         "📊 *Что внутри:*\n\n"
-        "• Аналитика рынка\n"
-        "• Разборы сделок\n"
-        "• Работа с рисками\n"
-        "• Психология трейдинга\n"
-        "• Системное мышление"
+        "• Аналитика\n"
+        "• Логика входов\n"
+        "• Контроль риска\n"
+        "• Работа с психологией\n"
+        "• Реальные кейсы",
+        reply_markup=back_kb()
     )
-    await c.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
 
-
-@dp.callback_query_handler(lambda c: c.data == "price")
-async def price(c: types.CallbackQuery):
-    text = (
-        "💰 *Подписка INNER CIRCLE*\n\n"
+@dp.callback_query_handler(lambda c: c.data == "pay")
+async def pay(c: types.CallbackQuery):
+    uid = c.from_user.id
+    await c.message.edit_text(
+        f"💰 *Условия доступа*\n\n"
         f"Цена: *{SUBSCRIPTION_PRICE} TON*\n"
         f"Срок: *{SUBSCRIPTION_DAYS} дней*\n\n"
-        "Оплата через TON.\n"
-        "После оплаты нажми кнопку ниже."
+        f"Кошелёк:\n`{TON_WALLET}`\n\n"
+        f"Комментарий:\n`INNER_{uid}`",
+        reply_markup=pay_kb()
     )
-    await c.message.edit_text(text, reply_markup=pay_kb(), parse_mode="Markdown")
 
+@dp.callback_query_handler(lambda c: c.data == "check")
+async def check(c: types.CallbackQuery):
+    uid = c.from_user.id
+    users = load_users()
+
+    await c.answer("🔎 Проверяю платёж...")
+
+    if await check_payment(uid):
+        users[str(uid)]["active"] = True
+        users[str(uid)]["expires"] = (
+            datetime.utcnow() + timedelta(days=SUBSCRIPTION_DAYS)
+        ).isoformat()
+        save_users(users)
+
+        await c.message.edit_text(
+            f"✅ *Платёж подтверждён!*\n\n"
+            f"Доступ:\n{CHANNEL_LINK}"
+        )
+    else:
+        await c.answer(
+            "❌ Платёж не найден.\n"
+            "Проверь сумму и комментарий.",
+            show_alert=True
+        )
 
 @dp.callback_query_handler(lambda c: c.data == "support")
 async def support(c: types.CallbackQuery):
     await c.message.edit_text(
-        f"🆘 Поддержка:\n\n👉 @{SUPPORT_USERNAME}",
+        f"🆘 Поддержка:\n@{SUPPORT_USERNAME}",
         reply_markup=back_kb()
     )
-
 
 @dp.callback_query_handler(lambda c: c.data == "back")
 async def back(c: types.CallbackQuery):
     await start(c.message)
-
-
-# ---------- payment ----------
-@dp.callback_query_handler(lambda c: c.data == "check")
-async def check_payment(c: types.CallbackQuery):
-    user_id = str(c.from_user.id)
-
-    until = mark_paid(user_id)
-
-    users = load_users()
-    users[user_id] = {
-        "active": True,
-        "paid_until": until
-    }
-    save_users(users)
-
-    await c.message.edit_text(
-        "✅ *Подписка активирована!*\n\n"
-        f"Доступ до: `{until}`\n\n"
-        f"🔗 Канал: {CHANNEL_LINK}",
-        reply_markup=renew_kb(),
-        parse_mode="Markdown"
-    )
-
-
-@dp.callback_query_handler(lambda c: c.data == "pay")
-async def pay(c: types.CallbackQuery):
-    text = (
-        "💳 *Оплата подписки*\n\n"
-        f"Сумма: *{SUBSCRIPTION_PRICE} TON*\n"
-        f"Кошелёк:\n`{TON_WALLET}`\n\n"
-        f"📝 Комментарий к платежу:\n`{c.from_user.id}`"
-    )
-    await c.message.edit_text(text, reply_markup=pay_kb(), parse_mode="Markdown")
 
 
 # ---------- run ----------
